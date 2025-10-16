@@ -87,7 +87,7 @@ def main(batch_size=16, num_workers=0, epochs=10, lr_power=4):
     # Calculate learning rate from power: lr = 10^(-lr_power)
     lr = 10 ** (-lr_power)
 
-    root_dir = './input/a-covid-multiclass-dataset-of-ct-scans/New_Data_CoV2'
+    root_dir = './input/New_Data_CoV2'
     root_path = Path(root_dir)
     
     # Check if data directory exists
