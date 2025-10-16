@@ -79,6 +79,51 @@ def collate_fn(batch):
     return out, labels.long()
 
 
+def create_model():
+    """Create an improved CNN model with more capacity and regularization"""
+    model = nn.Sequential(
+        # First conv block - increased capacity
+        nn.Conv2d(3, 32, 3, padding=1),
+        nn.BatchNorm2d(32),
+        nn.ReLU(),
+        nn.Conv2d(32, 32, 3, padding=1),
+        nn.BatchNorm2d(32),
+        nn.ReLU(),
+        nn.MaxPool2d(2),
+        nn.Dropout2d(0.25),
+        
+        # Second conv block
+        nn.Conv2d(32, 64, 3, padding=1),
+        nn.BatchNorm2d(64),
+        nn.ReLU(),
+        nn.Conv2d(64, 64, 3, padding=1),
+        nn.BatchNorm2d(64),
+        nn.ReLU(),
+        nn.MaxPool2d(2),
+        nn.Dropout2d(0.25),
+        
+        # Third conv block
+        nn.Conv2d(64, 128, 3, padding=1),
+        nn.BatchNorm2d(128),
+        nn.ReLU(),
+        nn.Conv2d(128, 128, 3, padding=1),
+        nn.BatchNorm2d(128),
+        nn.ReLU(),
+        nn.MaxPool2d(2),
+        nn.Dropout2d(0.25),
+        
+        # Global pooling and classifier
+        nn.AdaptiveAvgPool2d(1),
+        nn.Flatten(),
+        nn.Linear(128, 128),
+        nn.BatchNorm1d(128),
+        nn.ReLU(),
+        nn.Dropout(0.5),
+        nn.Linear(128, 3)
+    )
+    return model
+
+
 def main(batch_size=16, num_workers=0, epochs=10, lr_power=4):
     # This Python 3 environment comes with many helpful analytics libraries installed
     # It is defined by the kaggle/python Docker image: https://github.com/kaggle/docker-python
@@ -170,30 +215,8 @@ def main(batch_size=16, num_workers=0, epochs=10, lr_power=4):
     test_df = df[df['Patient'].isin(test_patients)]
     val_df = df[df['Patient'].isin(val_patients)]
 
-    # Create dataloaders
-
-    model = nn.Sequential(
-        nn.Conv2d(3, 4, 3),
-        nn.BatchNorm2d(4),
-        nn.Conv2d(4, 16, 3),
-        nn.BatchNorm2d(16),
-        nn.ReLU(),
-        nn.MaxPool2d(2),
-        
-        nn.Conv2d(16, 32, 3),
-        nn.BatchNorm2d(32),
-        nn.Conv2d(32, 32, 3),
-        nn.BatchNorm2d(32),
-        nn.ReLU(),
-        nn.MaxPool2d(2),
-        
-        nn.AdaptiveAvgPool2d(1),
-        nn.Flatten(),
-        nn.Linear(32, 16),
-        nn.BatchNorm1d(16),
-        nn.ReLU(),
-        nn.Linear(16, 3)
-    )
+    # Create model with improved architecture
+    model = create_model()
 
 
     class_dict = {'Healthy': 0, 'Covid': 1, 'Others': 2}
