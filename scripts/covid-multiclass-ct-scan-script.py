@@ -118,23 +118,56 @@ def split_dataset(base_dir, output_dir, train_ratio=0.8, val_ratio=0.1, test_rat
     print(f"\nDataset split completed. Output: {output_dir}")
 
 
-def create_model(input_shape=(224, 224, 3), learning_rate=0.0001):
+def create_model(input_shape=(224, 224, 3), learning_rate=0.0001, model_name='efficientnet'):
     """
-    Create EfficientNetB2 model with transfer learning
+    Create model with transfer learning - supports multiple architectures
+    
+    Args:
+        input_shape: Input image shape (height, width, channels)
+        learning_rate: Learning rate for optimizer
+        model_name: Model architecture - 'efficientnet', 'densenet121', or 'resnet50'
+    
+    Returns:
+        Compiled Keras model
     """
-    # Load pre-trained EfficientNetB2 without input_tensor first
-    base_model = EfficientNetB2(
-        weights='noisy-student', 
-        include_top=False, 
-        input_shape=input_shape
-    )
+    print(f"Loading {model_name.upper()} base model...")
+    
+    # Select base model based on model_name
+    if model_name == 'efficientnet':
+        base_model = EfficientNetB2(
+            weights='noisy-student', 
+            include_top=False, 
+            input_shape=input_shape
+        )
+        dense_units = 256
+    
+    elif model_name == 'densenet121':
+        from tensorflow.keras.applications import DenseNet121
+        base_model = DenseNet121(
+            weights='imagenet', 
+            include_top=False, 
+            input_shape=input_shape
+        )
+        dense_units = 256
+    
+    elif model_name == 'resnet50':
+        from tensorflow.keras.applications import ResNet50
+        base_model = ResNet50(
+            weights='imagenet', 
+            include_top=False, 
+            input_shape=input_shape
+        )
+        dense_units = 512  # ResNet typically needs more units
+    
+    else:
+        raise ValueError(f"Unknown model: {model_name}. Choose from: efficientnet, densenet121, resnet50")
     
     # Build model using Sequential API
     model = tf.keras.Sequential([
         base_model,
         GlobalAveragePooling2D(),
-        Dense(256, activation='relu'),
-        Dropout(0.2),
+        Dense(dense_units, activation='relu'),
+        Dropout(0.3),
         BatchNormalization(),
         Dense(3, activation='softmax')
     ])
@@ -149,6 +182,8 @@ def create_model(input_shape=(224, 224, 3), learning_rate=0.0001):
         optimizer=optimizers.Adam(learning_rate=learning_rate),
         metrics=['accuracy']
     )
+    
+    print(f"Model created successfully with {model.count_params():,} parameters")
     
     return model
 
@@ -268,7 +303,7 @@ def evaluate_model(model, generator, class_names, output_dir='./', dataset_name=
     Evaluate model and generate confusion matrix and classification report
     """
     generator.reset()
-    steps = generator.n / generator.batch_size
+    steps = int(np.ceil(generator.n / generator.batch_size))
     
     # Predictions
     pred = model.predict(generator, steps=steps, verbose=1)
@@ -276,6 +311,10 @@ def evaluate_model(model, generator, class_names, output_dir='./', dataset_name=
     
     # Get true labels
     true_classes = generator.classes
+    
+    # Truncate predictions to match true labels (in case of rounding)
+    if len(predicted_class_indices) > len(true_classes):
+        predicted_class_indices = predicted_class_indices[:len(true_classes)]
     
     # Calculate metrics
     accuracy = np.mean(predicted_class_indices == true_classes)
@@ -334,13 +373,13 @@ def test_model(model_path, test_dir, image_size=(224, 224), batch_size=16, outpu
 
 def main(base_dir, output_dir='./output', split_data=True, 
          epochs=60, batch_size=16, learning_rate=0.0001, image_size=224,
-         early_stop_patience=20, lr_patience=10):
+         early_stop_patience=20, lr_patience=10, model_name='efficientnet'):
     """
     Main training function
     """
     print("=" * 80)
     print("COVID-19 CT Scan Multiclass Classifier")
-    print("Using EfficientNetB2 Transfer Learning")
+    print(f"Using {model_name.upper()} Transfer Learning")
     print("=" * 80)
     
     # Create output directory
@@ -367,6 +406,7 @@ def main(base_dir, output_dir='./output', split_data=True,
     
     # Print configuration
     print(f"\nConfiguration:")
+    print(f"  Model architecture: {model_name}")
     print(f"  Data directory: {base_dir}")
     print(f"  Output directory: {output_dir}")
     print(f"  Epochs: {epochs}")
@@ -397,19 +437,23 @@ def main(base_dir, output_dir='./output', split_data=True,
     print(f"Classes: {list(train_generator.class_indices.keys())}")
     
     # Create model
-    print("\nCreating EfficientNetB2 model...")
-    model = create_model(input_shape=(image_size, image_size, 3), learning_rate=learning_rate)
+    print(f"\nCreating {model_name.upper()} model...")
+    model = create_model(
+        input_shape=(image_size, image_size, 3), 
+        learning_rate=learning_rate,
+        model_name=model_name
+    )
     
     print("\nModel Summary:")
     model.summary()
     
     # Create callbacks
-    model_file_path = os.path.join(output_dir, 'efficientnet_model.h5')
+    model_file_path = os.path.join(output_dir, f'{model_name}_model.h5')
     callbacks = create_callbacks(model_file_path, early_stop_patience, lr_patience)
     
-    # Calculate steps
-    steps_per_epoch = train_generator.n // batch_size
-    validation_steps = validation_generator.n // batch_size
+    # Calculate steps (use ceiling to ensure all samples are used)
+    steps_per_epoch = int(np.ceil(train_generator.n / batch_size))
+    validation_steps = int(np.ceil(validation_generator.n / batch_size))
     
     # Train model
     print("\n" + "=" * 80)
@@ -457,7 +501,7 @@ def main(base_dir, output_dir='./output', split_data=True,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description='Train COVID-19 CT Scan Multiclass Classifier using EfficientNetB2'
+        description='Train COVID-19 CT Scan Multiclass Classifier using Transfer Learning'
     )
     
     # Required arguments
@@ -467,6 +511,9 @@ if __name__ == "__main__":
     # Optional arguments
     parser.add_argument('--output_dir', type=str, default='./output',
                         help='Output directory for models and results (default: ./output)')
+    parser.add_argument('--model', type=str, default='efficientnet',
+                        choices=['efficientnet', 'densenet121', 'resnet50'],
+                        help='Model architecture to use (default: efficientnet)')
     parser.add_argument('--split_data', action='store_true',
                         help='Split the dataset into train/val/test (default: False, use existing split)')
     parser.add_argument('--epochs', type=int, default=60,
@@ -494,5 +541,6 @@ if __name__ == "__main__":
         learning_rate=args.learning_rate,
         image_size=args.image_size,
         early_stop_patience=args.early_stop_patience,
-        lr_patience=args.lr_patience
+        lr_patience=args.lr_patience,
+        model_name=args.model
     )
