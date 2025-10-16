@@ -115,33 +115,41 @@ def main(batch_size=16, num_workers=0, epochs=10, lr_power=4):
     print(f"\nInitial dataset distribution:")
     print(df.groupby('target').size())
 
-    # Balance dataset
+    # Balance dataset - ensure all three classes have equal representation
 
-    oversample = False
-    undersample = True
+    balance_classes = True
 
-    if oversample:
-        healthy_rows_idxs = df[df['target'] == 'Healthy'].index.values.tolist()
-        non_healthy_rows_idxs = df.index.values.tolist() 
-        df = df.iloc[healthy_rows_idxs*2 + non_healthy_rows_idxs]
-        
-    if undersample:
-        # Check how many Covid samples exist
+    if balance_classes:
+        # Get samples for each class
         covid_samples = df[df['target'] == 'Covid'].index.values
+        healthy_samples = df[df['target'] == 'Healthy'].index.values
+        others_samples = df[df['target'] == 'Others'].index.values
         
-        if len(covid_samples) == 0:
-            print("WARNING: No Covid samples found in dataset. Skipping undersampling.")
-        else:
-            # Use the minimum of 750 or available Covid samples
-            n_samples = min(750, len(covid_samples))
-            print(f"Undersampling: Using {n_samples} Covid samples")
-            
-            covid_selected = np.random.choice(covid_samples, n_samples, replace=False).tolist()
-            non_covid = df[df['target'] != 'Covid'].index.values.tolist()
-            
-            df = df.iloc[non_covid + covid_selected]
+        # Check if all classes exist
+        if len(covid_samples) == 0 or len(healthy_samples) == 0 or len(others_samples) == 0:
+            print("WARNING: One or more classes have no samples. Class distribution:")
+            print(df.groupby('target').size())
+            raise ValueError("Cannot balance dataset - missing classes")
+        
+        # Find the minimum class size, capped at 750 samples
+        min_class_size = min(len(covid_samples), len(healthy_samples), len(others_samples))
+        n_samples = min(750, min_class_size)
+        
+        print(f"\nBalancing all classes to {n_samples} samples each")
+        print(f"  Covid: {len(covid_samples)} → {n_samples}")
+        print(f"  Healthy: {len(healthy_samples)} → {n_samples}")
+        print(f"  Others: {len(others_samples)} → {n_samples}")
+        
+        # Randomly sample n_samples from each class
+        covid_selected = np.random.choice(covid_samples, n_samples, replace=False)
+        healthy_selected = np.random.choice(healthy_samples, n_samples, replace=False)
+        others_selected = np.random.choice(others_samples, n_samples, replace=False)
+        
+        # Combine all selected samples
+        selected_indices = np.concatenate([covid_selected, healthy_selected, others_selected])
+        df = df.iloc[selected_indices].reset_index(drop=True)
     
-    print(f"\nFinal dataset distribution:")
+    print(f"\nFinal dataset distribution (BALANCED):")
     print(df.groupby('target').size())
     print(f"Total samples: {len(df)}\n")
 
