@@ -9,7 +9,7 @@ into three categories: Covid, Healthy, and Others.
 import os
 import sys
 import argparse
-from time import time
+from datetime import datetime
 import numpy as np
 import pandas as pd
 from pathlib import Path
@@ -383,7 +383,7 @@ def main(base_dir, output_dir='./output', split_data=True,
     print(f"Using {model_name.upper()} Transfer Learning")
     print("=" * 80)
 
-    output_dir += f'/{model_name}_lr{learning_rate}_bs{batch_size}_img{image_size}_ep{epochs}_timestamp{int(time.time())}'
+    output_dir += f'/{model_name}_lr{learning_rate}_bs{batch_size}_img{image_size}_ep{epochs}_timestamp{datetime.now().strftime("%Y-%m-%d_%H%M%S")}'
 
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
