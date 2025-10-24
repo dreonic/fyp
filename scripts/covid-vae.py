@@ -4,19 +4,47 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 import matplotlib.pyplot as plt
 import numpy as np
+import os
+from datetime import datetime
 
 import torch.nn as nn
 from torch.nn import functional as F
 
 latent_dim = 32
 
-def generate_images(decoder_net, device="cuda", num_images=5):
+def generate_images(decoder_net, output_dir, device="cuda", num_images=5):
+    """Generate and save synthetic images from the trained VAE decoder"""
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Generate timestamp for this batch
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    
     latent_samples = torch.randn(num_images, latent_dim).to(device)
     with torch.no_grad():
         imgs = decoder_net(latent_samples)
-    for i in imgs:
-        plt.imshow(i[0].cpu().numpy(), cmap='gray')
-        plt.show()
+    
+    print(f"\nSaving {num_images} generated images to {output_dir}/")
+    
+    for idx, img in enumerate(imgs):
+        # Convert to numpy and squeeze to 2D
+        img_np = img[0].cpu().numpy()
+        
+        # Create filename
+        filename = f"generated_{timestamp}_{idx+1}.png"
+        filepath = os.path.join(output_dir, filename)
+        
+        # Save the image
+        plt.figure(figsize=(6, 6))
+        plt.imshow(img_np, cmap='gray')
+        plt.axis('off')
+        plt.tight_layout()
+        plt.savefig(filepath, bbox_inches='tight', pad_inches=0)
+        plt.close()
+        
+        print(f"  Saved: {filename}")
+    
+    print(f"\nAll images saved successfully!")
 
 def create_data_loader(train_dir, image_size=64, batch_size=16):
     """
@@ -189,7 +217,7 @@ def main(data_dir, output_dir, num_images=10):
 
     # Generate synthetic images
     print(f"\nGenerating {num_images} synthetic images...")
-    generate_images(decoder_net, device=device, num_images=num_images)
+    generate_images(decoder_net, output_dir, device=device, num_images=num_images)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -202,12 +230,19 @@ if __name__ == "__main__":
 
     # Optional arguments
     parser.add_argument('--output_dir', type=str, default='./generated_images',
-                        help='Directory to save generated images')
+                        help='Directory to save generated images (default: ./generated_images)')
+    parser.add_argument('--num_images', type=int, default=10,
+                        help='Number of synthetic images to generate (default: 10)')
+    parser.add_argument('--epochs', type=int, default=20,
+                        help='Number of training epochs (default: 20)')
+    parser.add_argument('--batch_size', type=int, default=16,
+                        help='Batch size for training (default: 16)')
+    
     args = parser.parse_args()
 
     main(
         data_dir=args.data_dir,
         output_dir=args.output_dir,
-        num_images=10
+        num_images=args.num_images
     )
         
