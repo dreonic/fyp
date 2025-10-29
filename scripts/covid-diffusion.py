@@ -605,7 +605,7 @@ def run_inference(unet, num_images, T, alphas, alpha_bars, image_size=128):
 
     return x
 
-def main(output_dir, num_images, train_dir, image_size=128, batch_size=16, resume_checkpoint=None):
+def main(output_dir, num_images, train_dir, epochs=500, save_every=5, image_size=128, batch_size=16, resume_checkpoint=None):
     # Create a folder name based on arguments
     data_dir_name = Path(train_dir).name
     run_name = f"{data_dir_name}_size{image_size}_imgs{num_images}"
@@ -671,7 +671,7 @@ def main(output_dir, num_images, train_dir, image_size=128, batch_size=16, resum
         os.remove(log_file)
 
     # loop
-    num_epochs = 500
+    num_epochs = epochs
     for epoch_idx in range(start_epoch, num_epochs):
         epoch_loss = []
         for batch_idx, (data, _) in enumerate(loader):
@@ -714,9 +714,9 @@ def main(output_dir, num_images, train_dir, image_size=128, batch_size=16, resum
         with open(log_file, "a") as f:
             for l in epoch_loss:
                 f.write("%s\n" %l)
-        
-        # Save checkpoint every 5 epochs or on the last epoch
-        if (epoch_idx + 1) % 5 == 0 or epoch_idx == num_epochs - 1:
+
+        # Save checkpoint every save_every epochs or on the last epoch
+        if (epoch_idx + 1) % save_every == 0 or epoch_idx == num_epochs - 1:
             checkpoint_path = os.path.join(checkpoint_dir, f"ddpm_unet_epoch{epoch_idx}.pt")
             torch.save(unet.state_dict(), checkpoint_path)
             print(f"  → Checkpoint saved: epoch {epoch_idx}")
@@ -755,6 +755,8 @@ if __name__ == "__main__":
                         help='Batch size for training. If not specified, auto-adjusts based on image_size (128->8, 64->12, else->16)')
     parser.add_argument('--epochs', type=int, default=500,
                         help='Number of training epochs (default: 500)')
+    parser.add_argument('--save_every', type=int, default=5,
+                        help='Number of epochs to wait before saving a checkpoint (default: 5)')
     parser.add_argument('--resume', type=str, default=None,
                         help='Path to checkpoint file to resume training from (e.g., ./diffusion_output/.../checkpoints/ddpm_unet_epoch49.pt)')
     
@@ -787,4 +789,7 @@ if __name__ == "__main__":
         image_size=args.image_size,
         train_dir=args.data_dir,
         resume_checkpoint=args.resume,
+        batch_size=args.batch_size,
+        epochs=args.epochs,
+        save_every=args.save_every
     )
