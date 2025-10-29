@@ -576,14 +576,14 @@ class UNet(nn.Module):
 
         return out
 
-def run_inference(unet, num_images, T, alphas, alpha_bars):
+def run_inference(unet, num_images, T, alphas, alpha_bars, image_size=128):
     unet.eval()
     # 0. generate sigma_t
     alpha_bars_prev = torch.cat((torch.ones(1).to(device), alpha_bars[:-1]))
     sigma_t_squared = (1.0 - alphas) * (1.0 - alpha_bars_prev) / (1.0 - alpha_bars)
     sigma_t = torch.sqrt(sigma_t_squared)
-    # 1. make white noise
-    x = torch.randn(num_images, 3, 32, 32).to(device)
+    # 1. make white noise with correct dimensions for grayscale images
+    x = torch.randn(num_images, 1, image_size, image_size).to(device)
     # 2. loop
     #   (t == 0 means diffused for 1 step)
     with torch.no_grad():
@@ -724,7 +724,7 @@ def main(output_dir, num_images, train_dir, image_size=128, resume_checkpoint=No
 
     # Generate synthetic images
     print(f"\nGenerating {num_images} synthetic images...")
-    generated_images = run_inference(unet, num_images, T, alphas, alpha_bars)
+    generated_images = run_inference(unet, num_images, T, alphas, alpha_bars, image_size)
 
     # Save generated images
     for i in range(num_images):
