@@ -605,7 +605,7 @@ def run_inference(unet, num_images, T, alphas, alpha_bars, image_size=128):
 
     return x
 
-def main(output_dir, num_images, train_dir, image_size=128, resume_checkpoint=None):
+def main(output_dir, num_images, train_dir, image_size=128, batch_size=16, resume_checkpoint=None):
     # Create a folder name based on arguments
     data_dir_name = Path(train_dir).name
     run_name = f"{data_dir_name}_size{image_size}_imgs{num_images}"
@@ -621,7 +621,8 @@ def main(output_dir, num_images, train_dir, image_size=128, resume_checkpoint=No
     print(f"Generated images will be saved to: {final_output_dir}")
     print()
     
-    loader = create_data_loader(train_dir, image_size=image_size, batch_size=16)
+    print(f"Using batch size: {batch_size}")
+    loader = create_data_loader(train_dir, image_size=image_size, batch_size=batch_size)
 
     unet = UNet(
         source_channel=1,
@@ -677,7 +678,7 @@ def main(output_dir, num_images, train_dir, image_size=128, resume_checkpoint=No
             unet.train()
             opt.zero_grad()
 
-            # 2. Pick up x_0 (shape: [batch_size, 3, 32, 32])
+            # 2. Pick up x_0 (shape: [batch_size, 1, H, W])
             x_0 = data.to(device)
 
             # 3. Pick up random timestep, t .
@@ -750,6 +751,8 @@ if __name__ == "__main__":
                         help='Number of images to generate (default: 10)')
     parser.add_argument('--image_size', type=int, default=128,
                         help='Size of the generated images in pixels (default: 128)')
+    parser.add_argument('--batch_size', type=int, default=16,
+                        help='Batch size for training. If not specified, auto-adjusts based on image_size (128->8, 64->12, else->16)')
     parser.add_argument('--epochs', type=int, default=500,
                         help='Number of training epochs (default: 500)')
     parser.add_argument('--resume', type=str, default=None,
