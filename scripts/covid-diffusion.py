@@ -10,6 +10,7 @@ from torch.nn import functional as F
 import tqdm
 import os
 import sys
+from pathlib import Path
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from utils.utils import create_data_loader
@@ -604,7 +605,22 @@ def run_inference(unet, num_images, T, alphas, alpha_bars):
 
     return x
 
-def main(output_dir, num_images, train_dir, image_size=128):
+def main(output_dir, num_images, train_dir, image_size=128, resume_checkpoint=None):
+    # Create a folder name based on arguments
+    data_dir_name = Path(train_dir).name
+    run_name = f"{data_dir_name}_size{image_size}_imgs{num_images}"
+    
+    # Create checkpoint and output directories
+    checkpoint_dir = os.path.join(output_dir, run_name, "checkpoints")
+    final_output_dir = os.path.join(output_dir, run_name, "generated_images")
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    os.makedirs(final_output_dir, exist_ok=True)
+    
+    print(f"Run name: {run_name}")
+    print(f"Checkpoints will be saved to: {checkpoint_dir}")
+    print(f"Generated images will be saved to: {final_output_dir}")
+    print()
+    
     loader = create_data_loader(train_dir, image_size=image_size, batch_size=16)
 
     unet = UNet(
@@ -620,6 +636,26 @@ def main(output_dir, num_images, train_dir, image_size=128):
         end_factor=1.0,
         total_iters=5000)
 
+    # Resume from checkpoint if specified
+    start_epoch = 0
+    if resume_checkpoint:
+        if os.path.exists(resume_checkpoint):
+            print(f"Resuming from checkpoint: {resume_checkpoint}")
+            checkpoint = torch.load(resume_checkpoint, map_location=device)
+            unet.load_state_dict(checkpoint)
+            # Extract epoch number from filename (e.g., "ddpm_unet_epoch49.pt" -> 49)
+            try:
+                start_epoch = int(resume_checkpoint.split('epoch')[1].split('.pt')[0]) + 1
+                print(f"Resuming training from epoch {start_epoch}")
+            except:
+                print("Warning: Could not extract epoch number from checkpoint filename. Starting from epoch 0.")
+                start_epoch = 0
+        else:
+            print(f"Warning: Checkpoint file not found: {resume_checkpoint}")
+            print("Starting training from scratch.")
+    
+    print()
+
     # 1. Initialize T and alpha
     #   (See above note for precision.)
     T = 1000
@@ -628,14 +664,14 @@ def main(output_dir, num_images, train_dir, image_size=128):
     sqrt_alpha_bars_t = torch.sqrt(alpha_bars)
     sqrt_one_minus_alpha_bars_t = torch.sqrt(1.0 - alpha_bars)
 
-    # remove log file if exists
-    log_file = "train_loss.log"
-    if os.path.exists(log_file):
+    # remove log file if exists (only if starting fresh)
+    log_file = os.path.join(checkpoint_dir, "train_loss.log")
+    if start_epoch == 0 and os.path.exists(log_file):
         os.remove(log_file)
 
     # loop
     num_epochs = 500
-    for epoch_idx in range(num_epochs):
+    for epoch_idx in range(start_epoch, num_epochs):
         epoch_loss = []
         for batch_idx, (data, _) in enumerate(loader):
             unet.train()
@@ -677,7 +713,12 @@ def main(output_dir, num_images, train_dir, image_size=128):
         with open(log_file, "a") as f:
             for l in epoch_loss:
                 f.write("%s\n" %l)
-        torch.save(unet.state_dict(), f"ddpm_unet_{epoch_idx}.pt")
+        
+        # Save checkpoint every 5 epochs or on the last epoch
+        if (epoch_idx + 1) % 5 == 0 or epoch_idx == num_epochs - 1:
+            checkpoint_path = os.path.join(checkpoint_dir, f"ddpm_unet_epoch{epoch_idx}.pt")
+            torch.save(unet.state_dict(), checkpoint_path)
+            print(f"  → Checkpoint saved: epoch {epoch_idx}")
 
     print("Done training!")
 
@@ -686,11 +727,10 @@ def main(output_dir, num_images, train_dir, image_size=128):
     generated_images = run_inference(unet, num_images, T, alphas, alpha_bars)
 
     # Save generated images
-    os.makedirs(output_dir, exist_ok=True)
     for i in range(num_images):
         img = generated_images[i].cpu().numpy()
-        plt.imsave(os.path.join(output_dir, f"generated_image_{i+1}.png"), img.squeeze(), cmap='gray')
-    print(f"Generated images saved to {output_dir}")
+        plt.imsave(os.path.join(final_output_dir, f"generated_image_{i+1}.png"), img.squeeze(), cmap='gray')
+    print(f"Generated images saved to {final_output_dir}")
 
 
 
@@ -701,15 +741,20 @@ if __name__ == "__main__":
 
     # Required arguments
     parser.add_argument('--data_dir', type=str, required=True,
-                        help='Path to the dataset directory containing Covid/Healthy/Others folders')
+                        help='Path to the dataset directory. Use parent dir (New_Data_CoV2) for all classes, or specific class dir (Covid/Healthy/Others)')
 
     # Optional arguments
-    parser.add_argument('--output_dir', type=str, required=True,
-                        help='Directory to save generated images')
+    parser.add_argument('--output_dir', type=str, default='./diffusion_output',
+                        help='Base directory to save generated images and checkpoints (default: ./diffusion_output)')
     parser.add_argument('--num_images', type=int, default=10,
-                        help='Number of images to generate')
+                        help='Number of images to generate (default: 10)')
     parser.add_argument('--image_size', type=int, default=128,
-                        help='Size of the generated images (image_size x image_size)')
+                        help='Size of the generated images in pixels (default: 128)')
+    parser.add_argument('--epochs', type=int, default=500,
+                        help='Number of training epochs (default: 500)')
+    parser.add_argument('--resume', type=str, default=None,
+                        help='Path to checkpoint file to resume training from (e.g., ./diffusion_output/.../checkpoints/ddpm_unet_epoch49.pt)')
+    
     args = parser.parse_args()
 
     if torch.cuda.is_available():
@@ -717,11 +762,26 @@ if __name__ == "__main__":
         # clear cache
         torch.cuda.empty_cache()
     else:
-        raise RuntimeError("CUDA is not available. A GPU is required to run this script.")   
+        raise RuntimeError("CUDA is not available. A GPU is required to run this script.")
+    
+    print("="*60)
+    print("COVID-19 Diffusion Model Training")
+    print("="*60)
+    print(f"Data directory: {args.data_dir}")
+    print(f"Output directory: {args.output_dir}")
+    print(f"Image size: {args.image_size}x{args.image_size}")
+    print(f"Number of epochs: {args.epochs}")
+    print(f"Images to generate: {args.num_images}")
+    print(f"Device: {device}")
+    if args.resume:
+        print(f"Resume from: {args.resume}")
+    print("="*60)
+    print()   
     
     main(
         output_dir=args.output_dir,
         num_images=args.num_images,
         image_size=args.image_size,
         train_dir=args.data_dir,
+        resume_checkpoint=args.resume,
     )
